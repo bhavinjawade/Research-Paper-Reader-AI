@@ -1,0 +1,5 @@
+{
+  "name": "Paper Reader AI",
+  "description": "A high-end academic research paper reader that uses Gemini 3 Pro to intelligently transcribe equations, algorithms, and figures into natural speech, powered by the latest Gemini TTS.",
+  "requestFramePermissions": []
+}
