@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Upload, Play, Pause, Square, Loader2, Volume2, Sparkles, AlertCircle, Headphones, ArrowLeft, User, Settings, Eye, EyeOff, Save, ExternalLink, BookOpen, Gauge } from 'lucide-react';
+import { Upload, Play, Pause, Square, Loader2, Volume2, Sparkles, AlertCircle, Headphones, ArrowLeft, User, Settings, Eye, EyeOff, Save, ExternalLink, BookOpen, Gauge, Moon, Sun } from 'lucide-react';
 import { ProcessingState, AppState, SpeechBlock, BlockType, VoiceType, PaperSection, PlaybackSpeed } from './types';
 import { parsePdf } from './services/pdfService';
 import { extractSections, processSectionText, generateAudio, generateAudioBatch } from './services/geminiService';
@@ -24,6 +24,14 @@ const App: React.FC = () => {
   const [isOpenRouterKeyVisible, setIsOpenRouterKeyVisible] = useState<boolean>(false);
   const [isDeepgramKeyVisible, setIsDeepgramKeyVisible] = useState<boolean>(false);
 
+  // Dark mode
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(localStorage.getItem('dark_mode') === 'true');
+  const toggleDarkMode = () => {
+    const newValue = !isDarkMode;
+    setIsDarkMode(newValue);
+    localStorage.setItem('dark_mode', String(newValue));
+  };
+
   const [state, setState] = useState<AppState>({
     file: null,
     status: ProcessingState.IDLE,
@@ -45,6 +53,7 @@ const App: React.FC = () => {
   const pagesTextRef = useRef<string[]>([]);
   const prefetchingRef = useRef<boolean>(false);
   const playbackSpeedRef = useRef<PlaybackSpeed>(1.0);
+  const lastSectionIdRef = useRef<string | null>(null);
 
   // Keep the ref in sync with state
   const setPlaybackSpeed = (speed: PlaybackSpeed) => {
@@ -202,7 +211,7 @@ const App: React.FC = () => {
         progress: 0
       }));
 
-      // Step 3: Process sections sequentially, prefetching next while playing current
+      // Step 3: Process sections sequentially, playing audio as it's generated
       for (let i = 0; i < sections.length; i++) {
         const section = sections[i];
 
@@ -227,14 +236,13 @@ const App: React.FC = () => {
         );
 
         setState(prev => {
-          // Preserve PAUSED/PLAYING states during processing
           const status = (prev.status === ProcessingState.PAUSED || prev.status === ProcessingState.PLAYING)
             ? prev.status
             : ProcessingState.GENERATING_VOICE;
           return { ...prev, status };
         });
 
-        // Generate audio for blocks
+        // Generate audio for blocks and play immediately
         const fullBlocks: SpeechBlock[] = [];
         for (const blockData of blocks) {
           const buffer = await generateAudio(deepgramKey, blockData.content!, audioContextRef.current!, voiceName);
@@ -247,6 +255,7 @@ const App: React.FC = () => {
           fullBlocks.push(fullBlock);
           allBlocksRef.current.push(fullBlock);
 
+          // Queue audio immediately as it's generated
           if (buffer) {
             queueAudio(fullBlock);
           }
@@ -287,6 +296,13 @@ const App: React.FC = () => {
     source.buffer = block.audioBuffer;
     source.playbackRate.value = playbackSpeedRef.current; // Apply current speed
     source.connect(ctx.destination);
+
+    // Add 0.5s pause when starting a new section
+    const SECTION_PAUSE = 0.5;
+    if (lastSectionIdRef.current !== null && lastSectionIdRef.current !== block.sectionId) {
+      nextStartTimeRef.current += SECTION_PAUSE;
+    }
+    lastSectionIdRef.current = block.sectionId;
 
     if (nextStartTimeRef.current === 0) {
       nextStartTimeRef.current = ctx.currentTime + 0.1;
@@ -463,34 +479,58 @@ const App: React.FC = () => {
   const readySections = state.sections.filter(s => s.status === 'ready' || s.status === 'completed').length;
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-6 bg-slate-50 text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 md:p-6 transition-colors duration-300 ${isDarkMode
+      ? 'bg-slate-950 text-slate-100 selection:bg-indigo-900 selection:text-indigo-100'
+      : 'bg-slate-50 text-slate-900 selection:bg-indigo-100 selection:text-indigo-900'
+      }`}>
+      {/* Dark mode toggle - fixed position */}
+      <button
+        onClick={toggleDarkMode}
+        className={`fixed top-4 right-4 z-50 p-3 rounded-xl transition-all hover:scale-110 ${isDarkMode
+          ? 'bg-slate-800 text-amber-400 hover:bg-slate-700 border border-slate-700'
+          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 shadow-lg'
+          }`}
+        title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+      >
+        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
+
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none -z-10">
-        <div className="absolute top-[-5%] left-[-5%] w-[35%] h-[35%] bg-indigo-100/60 blur-[100px] rounded-full"></div>
-        <div className="absolute bottom-[-5%] right-[-5%] w-[35%] h-[35%] bg-blue-100/60 blur-[100px] rounded-full"></div>
+        <div className={`absolute top-[-5%] left-[-5%] w-[35%] h-[35%] blur-[100px] rounded-full ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-100/60'
+          }`}></div>
+        <div className={`absolute bottom-[-5%] right-[-5%] w-[35%] h-[35%] blur-[100px] rounded-full ${isDarkMode ? 'bg-purple-900/30' : 'bg-blue-100/60'
+          }`}></div>
       </div>
 
       {state.status === ProcessingState.IDLE && (
         <header className="mb-8 text-center animate-in fade-in slide-in-from-top duration-700 w-full max-w-xl">
           <div className="flex items-center justify-center gap-2 mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-semibold">
+            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${isDarkMode
+              ? 'bg-indigo-900/50 border border-indigo-700 text-indigo-300'
+              : 'bg-indigo-50 border border-indigo-100 text-indigo-600'
+              }`}>
               <Sparkles size={14} />
               <span>AI Research Assistant</span>
             </div>
             <button
               onClick={() => setShowKeyInput(true)}
-              className="p-1.5 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 transition-colors shadow-sm"
+              className={`p-1.5 rounded-full transition-colors shadow-sm ${isDarkMode
+                ? 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400'
+                : 'bg-white border border-slate-200 text-slate-400 hover:text-indigo-600'
+                }`}
               title="Change API Key"
             >
               <Settings size={14} />
             </button>
           </div>
           <div className="flex items-center justify-center gap-3 mb-4">
-            <img src="./images/logo.png" alt="Paper Reader AI" className="w-14 h-14 md:w-16 md:h-16 rounded-2xl" />
-            <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-slate-900 font-['Inter']">
-              Paper Reader <span className="text-indigo-600">AI</span>
+            {/* Logo hidden in dark mode */}
+            {!isDarkMode && <img src="./images/logo.png" alt="Paper Reader AI" className="w-14 h-14 md:w-16 md:h-16 rounded-2xl" />}
+            <h1 className={`text-4xl md:text-6xl font-bold tracking-tight font-['Inter'] ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+              Paper Reader <span className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}>AI</span>
             </h1>
           </div>
-          <p className="text-slate-600 max-w-lg mx-auto text-base md:text-lg leading-relaxed">
+          <p className={`max-w-lg mx-auto text-base md:text-lg leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
             Upload your PDF and listen to research papers. Papers are intelligently split into sections for natural narration.
           </p>
         </header>
@@ -498,20 +538,38 @@ const App: React.FC = () => {
 
       <main className="w-full max-w-4xl flex flex-col gap-6">
         {state.status === ProcessingState.IDLE && (
-          <div className="glass p-8 md:p-12 rounded-[2rem] border-dashed border-2 border-indigo-200 flex flex-col items-center gap-8 transition-all hover:border-indigo-400 shadow-sm relative overflow-hidden">
+          <div className={`p-8 md:p-12 rounded-[2rem] border-dashed border-2 flex flex-col items-center gap-8 transition-all shadow-sm relative overflow-hidden ${isDarkMode
+            ? 'bg-slate-900/80 backdrop-blur-xl border-slate-700 hover:border-indigo-500'
+            : 'glass border-indigo-200 hover:border-indigo-400'
+            }`}>
             <div className="w-full flex flex-col items-center gap-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Select Narrator</span>
-              <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
+              <span className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Select Narrator</span>
+              <div className={`flex p-1 rounded-2xl border shadow-inner ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
+                }`}>
                 <button
                   onClick={() => setVoice('female')}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${state.selectedVoice === 'female' ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${state.selectedVoice === 'female'
+                    ? isDarkMode
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
+                    : isDarkMode
+                      ? 'text-slate-400 hover:text-slate-200'
+                      : 'text-slate-500 hover:text-slate-700'
+                    }`}
                 >
                   <User size={16} />
                   Female
                 </button>
                 <button
                   onClick={() => setVoice('male')}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${state.selectedVoice === 'male' ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${state.selectedVoice === 'male'
+                    ? isDarkMode
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
+                    : isDarkMode
+                      ? 'text-slate-400 hover:text-slate-200'
+                      : 'text-slate-500 hover:text-slate-700'
+                    }`}
                 >
                   <User size={16} />
                   Male
@@ -519,16 +577,23 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="w-full flex flex-col items-center gap-6 py-4 border-t border-slate-100 group cursor-pointer active:scale-[0.99] transition-all">
-              <div className="w-20 h-20 bg-indigo-50 rounded-[1.5rem] flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform shadow-inner border border-indigo-100">
+            <div className={`w-full flex flex-col items-center gap-6 py-4 border-t group cursor-pointer active:scale-[0.99] transition-all ${isDarkMode ? 'border-slate-700' : 'border-slate-100'
+              }`}>
+              <div className={`w-20 h-20 rounded-[1.5rem] flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner border ${isDarkMode
+                ? 'bg-indigo-900/50 text-indigo-400 border-indigo-800'
+                : 'bg-indigo-50 text-indigo-500 border-indigo-100'
+                }`}>
                 <Upload size={36} />
               </div>
               <div className="text-center">
-                <h2 className="text-xl md:text-2xl font-bold text-slate-800 mb-1">Ready to start?</h2>
-                <p className="text-slate-500 text-sm">Select a PDF to begin intelligent narration</p>
+                <h2 className={`text-xl md:text-2xl font-bold mb-1 ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>Ready to start?</h2>
+                <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Select a PDF to begin intelligent narration</p>
               </div>
               <label className="relative cursor-pointer">
-                <span className="bg-indigo-600 text-white px-10 py-3.5 rounded-2xl font-bold text-base shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all inline-block">
+                <span className={`px-10 py-3.5 rounded-2xl font-bold text-base hover:-translate-y-0.5 transition-all inline-block ${isDarkMode
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50 hover:bg-indigo-500'
+                  : 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700'
+                  }`}>
                   Choose PDF File
                 </span>
                 <input
@@ -548,19 +613,26 @@ const App: React.FC = () => {
         )}
 
         {state.status !== ProcessingState.IDLE && (
-          <div className="glass rounded-[2rem] overflow-hidden shadow-xl border border-white flex flex-col h-[85vh] md:h-[75vh] animate-in fade-in zoom-in duration-500">
-            <div className="px-6 md:px-10 py-5 md:py-6 border-b border-slate-100 flex items-center justify-between bg-white/40 sticky top-0 z-10">
+          <div className={`rounded-[2rem] overflow-hidden shadow-xl border flex flex-col h-[85vh] md:h-[75vh] animate-in fade-in zoom-in duration-500 ${isDarkMode
+            ? 'bg-slate-900 border-slate-700'
+            : 'glass border-white'
+            }`}>
+            <div className={`px-6 md:px-10 py-5 md:py-6 border-b flex items-center justify-between sticky top-0 z-10 ${isDarkMode
+              ? 'bg-slate-900/90 border-slate-800'
+              : 'bg-white/40 border-slate-100'
+              }`}>
               <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-                <button onClick={reset} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                  <ArrowLeft size={20} className="text-slate-500" />
+                <button onClick={reset} className={`p-2 rounded-full transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                  }`}>
+                  <ArrowLeft size={20} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
                 </button>
                 <div className="overflow-hidden">
-                  <h3 className="text-slate-900 text-sm md:text-lg font-bold truncate">
+                  <h3 className={`text-sm md:text-lg font-bold truncate ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
                     {state.file?.name}
                   </h3>
                   <div className="flex items-center gap-2">
                     <span className={`w-1.5 h-1.5 rounded-full ${state.status === ProcessingState.PLAYING ? 'bg-indigo-500 animate-pulse' : 'bg-slate-300'}`}></span>
-                    <p className="text-slate-500 text-[10px] md:text-xs font-semibold uppercase tracking-wider">
+                    <p className={`text-[10px] md:text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
                       {state.status === ProcessingState.COMPLETED ? "Finished" : state.status.replace(/_/g, ' ')} • {state.selectedVoice} voice
                     </p>
                   </div>
@@ -570,13 +642,19 @@ const App: React.FC = () => {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowKeyInput(true)}
-                  className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-indigo-600 transition-colors"
+                  className={`p-2 rounded-full transition-colors ${isDarkMode
+                    ? 'text-slate-500 hover:bg-slate-800 hover:text-indigo-400'
+                    : 'hover:bg-slate-100 text-slate-400 hover:text-indigo-600'
+                    }`}
                   title="Settings"
                 >
                   <Settings size={20} />
                 </button>
                 {state.status !== ProcessingState.COMPLETED && state.status !== ProcessingState.ERROR && (
-                  <div className="px-3 py-1 bg-white rounded-full border border-slate-200 flex items-center gap-2 text-indigo-600 text-[10px] md:text-xs font-bold shadow-sm">
+                  <div className={`px-3 py-1 rounded-full border flex items-center gap-2 text-[10px] md:text-xs font-bold shadow-sm ${isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-indigo-400'
+                    : 'bg-white border-slate-200 text-indigo-600'
+                    }`}>
                     <Loader2 size={12} className="animate-spin" />
                     {Math.round(state.progress)}%
                   </div>
@@ -586,7 +664,8 @@ const App: React.FC = () => {
 
             {/* Section tabs */}
             {state.sections.length > 0 && (
-              <div className="px-6 md:px-10 py-3 bg-slate-50/80 border-b border-slate-100 flex gap-2 overflow-x-auto custom-scrollbar">
+              <div className={`px-6 md:px-10 py-3 border-b flex gap-2 overflow-x-auto custom-scrollbar ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50/80 border-slate-100'
+                }`}>
                 {state.sections.map((section, idx) => (
                   <button
                     key={section.id}
@@ -595,10 +674,16 @@ const App: React.FC = () => {
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 ${state.currentSectionIndex === idx
                       ? 'bg-indigo-600 text-white ring-2 ring-indigo-300'
                       : section.status === 'ready' || section.status === 'completed'
-                        ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                        ? isDarkMode
+                          ? 'bg-indigo-900/40 text-indigo-300 hover:bg-indigo-900/60'
+                          : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
                         : section.status === 'processing'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-slate-100 text-slate-500'
+                          ? isDarkMode
+                            ? 'bg-amber-900/30 text-amber-500'
+                            : 'bg-amber-100 text-amber-700'
+                          : isDarkMode
+                            ? 'bg-slate-800 text-slate-600'
+                            : 'bg-slate-100 text-slate-500'
                       }`}
                   >
                     {section.status === 'processing' && <Loader2 size={10} className="inline mr-1 animate-spin" />}
@@ -608,7 +693,8 @@ const App: React.FC = () => {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-6 custom-scrollbar scroll-smooth bg-white/20">
+            <div className={`flex-1 overflow-y-auto p-6 md:p-10 space-y-6 custom-scrollbar scroll-smooth ${isDarkMode ? 'bg-slate-950/20' : 'bg-white/20'
+              }`}>
               {allBlocksFlattened.length > 0 ? (
                 allBlocksFlattened.map((block) => {
                   const isActive = state.currentlyPlayingBlockId === block.id;
@@ -618,9 +704,15 @@ const App: React.FC = () => {
                       key={block.id}
                       id={block.id}
                       className={`relative p-5 md:p-6 rounded-2xl transition-all duration-700 ${isActive
-                        ? 'bg-white ring-1 ring-slate-200 shadow-lg shadow-indigo-100/20 translate-x-1'
+                        ? isDarkMode
+                          ? 'bg-slate-800 ring-1 ring-slate-700 shadow-lg shadow-indigo-900/20 translate-x-1'
+                          : 'bg-white ring-1 ring-slate-200 shadow-lg shadow-indigo-100/20 translate-x-1'
                         : 'opacity-40 grayscale-[0.3]'
-                        } ${block.type === BlockType.DESCRIPTION ? 'border-dashed border-2 border-indigo-100 bg-indigo-50/30' : ''}`}
+                        } ${block.type === BlockType.DESCRIPTION
+                          ? isDarkMode
+                            ? 'border-dashed border-2 border-indigo-900/50 bg-indigo-900/10'
+                            : 'border-dashed border-2 border-indigo-100 bg-indigo-50/30'
+                          : ''}`}
                     >
                       {isActive && (
                         <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-8 bg-indigo-600 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.4)]"></div>
@@ -630,12 +722,17 @@ const App: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <span className={`text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded ${block.type === BlockType.DESCRIPTION
                             ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 text-slate-500'
+                            : isDarkMode
+                              ? 'bg-slate-700 text-slate-400'
+                              : 'bg-slate-100 text-slate-500'
                             }`}>
                             {block.type === BlockType.DESCRIPTION ? 'Analysis' : 'Paper Text'}
                           </span>
                           {section && (
-                            <span className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                            <span className={`text-[9px] font-semibold px-2 py-0.5 rounded ${isDarkMode
+                              ? 'text-indigo-300 bg-indigo-900/30'
+                              : 'text-indigo-600 bg-indigo-50'
+                              }`}>
                               {section.title}
                             </span>
                           )}
@@ -643,7 +740,10 @@ const App: React.FC = () => {
                         {isActive && <Volume2 size={14} className="text-indigo-600 animate-bounce" />}
                       </div>
 
-                      <p className={`text-base md:text-lg font-['Inter'] leading-relaxed ${isActive ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
+                      <p className={`text-base md:text-lg font-['Inter'] leading-relaxed ${isActive
+                        ? isDarkMode ? 'text-slate-200 font-medium' : 'text-slate-900 font-medium'
+                        : isDarkMode ? 'text-slate-500' : 'text-slate-600'
+                        }`}>
                         {block.content}
                       </p>
                     </div>
@@ -651,7 +751,8 @@ const App: React.FC = () => {
                 })
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4 opacity-50">
-                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                    }`}>
                     <Headphones size={32} className="animate-pulse" />
                   </div>
                   <p className="italic text-base font-medium">
@@ -663,12 +764,16 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <div className="px-6 md:px-10 py-6 md:py-8 bg-white border-t border-slate-100 flex flex-col md:flex-row items-center gap-6 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
+            <div className={`px-6 md:px-10 py-6 md:py-8 border-t flex flex-col md:flex-row items-center gap-6 shadow-[0_-10px_20px_rgba(0,0,0,0.02)] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
+              }`}>
               <div className="flex items-center gap-4 w-full md:w-auto justify-center">
                 <button
                   onClick={togglePlayback}
                   disabled={allBlocksFlattened.length === 0}
-                  className="w-14 h-14 md:w-16 md:h-16 bg-indigo-600 text-white rounded-2xl flex items-center justify-center hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed group"
+                  className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed group ${isDarkMode
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-900/50'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100'
+                    }`}
                 >
                   {state.status === ProcessingState.PLAYING ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
                 </button>
@@ -677,13 +782,14 @@ const App: React.FC = () => {
               <div className="flex-1 w-full max-w-md">
                 <div className="flex justify-between items-end mb-2 px-1">
                   <div className="flex flex-col">
-                    <span className="text-slate-800 text-[10px] md:text-xs font-bold uppercase tracking-wider">Sections Progress</span>
+                    <span className={`text-[10px] md:text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-800'}`}>Sections Progress</span>
                   </div>
-                  <div className="text-indigo-600 font-bold text-xs">
+                  <div className={`font-bold text-xs ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
                     {readySections}/{state.sections.length} Sections
                   </div>
                 </div>
-                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden p-0 border border-slate-200">
+                <div className={`h-1.5 w-full rounded-full overflow-hidden p-0 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
+                  }`}>
                   <div
                     className="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(79,70,229,0.2)]"
                     style={{ width: `${state.sections.length > 0 ? (readySections / state.sections.length) * 100 : 0}%` }}
@@ -692,15 +798,16 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2">
-                <Gauge size={16} className="text-slate-400" />
-                <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                <Gauge size={16} className={isDarkMode ? 'text-slate-600' : 'text-slate-400'} />
+                <div className={`flex rounded-lg p-0.5 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
+                  }`}>
                   {SPEED_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
                       onClick={() => setPlaybackSpeed(opt.value)}
                       className={`px-2 py-1 text-[10px] md:text-xs font-bold rounded-md transition-all ${state.playbackSpeed === opt.value
                         ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
+                        : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
                       {opt.label}
@@ -726,12 +833,12 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <footer className="mt-auto py-10 text-slate-400 text-xs flex flex-col items-center gap-2 w-full text-center">
+      <footer className={`mt-auto py-10 text-xs flex flex-col items-center gap-2 w-full text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
         <p className="opacity-80">
-          Vibe coded by <a href="https://bhavinjawade.github.io" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-semibold hover:underline">Bhavin Jawade</a> with <span className="text-indigo-600">Antigravity</span> + <span className="text-indigo-600">Claude Opus 4.5</span>
+          Vibe coded by <a href="https://bhavinjawade.github.io" target="_blank" rel="noopener noreferrer" className={`font-semibold hover:underline ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Bhavin Jawade</a> with <span className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}>Antigravity</span> + <span className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}>Claude Opus 4.5</span>
         </p>
         <p className="opacity-60 text-[10px]">
-          LLM APIs from <span className="text-indigo-600">OpenRouter</span> · Speech Generation using <span className="text-indigo-600">Deepgram</span>
+          LLM APIs from <span className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}>OpenRouter</span> · Speech Generation using <span className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}>Deepgram</span>
         </p>
         <p className="opacity-50 font-bold uppercase tracking-widest text-[9px] mt-1">
           Your key is never sent to our servers.
