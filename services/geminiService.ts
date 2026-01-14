@@ -83,17 +83,21 @@ export const extractSections = async (
   openRouterApiKey: string,
   allPagesText: string[]
 ): Promise<RawSection[]> => {
-  // Sample pages strategically for section detection
+  // Sample pages more thoroughly for section detection
   let samplePages: { pageNum: number; text: string }[] = [];
 
-  if (allPagesText.length <= 10) {
+  if (allPagesText.length <= 15) {
+    // For shorter papers, use all pages
     samplePages = allPagesText.map((text, i) => ({ pageNum: i + 1, text }));
   } else {
+    // For longer papers, sample more frequently
     const indices = new Set<number>();
-    for (let i = 0; i < 3; i++) indices.add(i);
-    for (let i = 3; i < allPagesText.length - 2; i += 3) indices.add(i);
-    if (allPagesText.length > 3) indices.add(allPagesText.length - 3);
-    if (allPagesText.length > 2) indices.add(allPagesText.length - 2);
+    // First 4 pages (title, abstract, intro)
+    for (let i = 0; i < 4 && i < allPagesText.length; i++) indices.add(i);
+    // Sample every 2nd page in the middle
+    for (let i = 4; i < allPagesText.length - 3; i += 2) indices.add(i);
+    // Last 3 pages (conclusion area)
+    for (let i = Math.max(0, allPagesText.length - 3); i < allPagesText.length; i++) indices.add(i);
 
     samplePages = Array.from(indices)
       .sort((a, b) => a - b)
@@ -104,20 +108,36 @@ export const extractSections = async (
     .map(p => `--- PAGE ${p.pageNum} ---\n${p.text}`)
     .join('\n\n');
 
-  const prompt = `Analyze this research paper and identify its major sections.
+  const prompt = `Analyze this research paper and identify ALL of its sections. Be thorough - do not miss any sections.
 
-Look for section headings like: Abstract, Introduction, Related Work, Methods, Experiments, Results, Discussion, Conclusion (Skip References).
+COMMON SECTION TYPES (find all that exist):
+- Abstract
+- Introduction
+- Background / Related Work / Prior Work / Literature Review
+- Problem Statement / Motivation
+- Methods / Methodology / Approach / Proposed Method / Our Approach
+- Model / Architecture / System Design / Framework
+- Implementation / Setup
+- Experiments / Experimental Setup / Evaluation
+- Results / Findings
+- Analysis / Ablation Study
+- Discussion
+- Limitations / Future Work
+- Conclusion / Summary
+- Acknowledgments (include this)
+- Skip: References / Bibliography / Appendix
 
-The paper has ${allPagesText.length} total pages.
+The paper has ${allPagesText.length} total pages. I'm showing you samples from pages to help identify ALL section boundaries.
 
 OUTPUT FORMAT: Return ONLY a valid JSON array:
-[{"title": "Abstract", "pageStart": 1, "pageEnd": 1}, {"title": "Introduction", "pageStart": 1, "pageEnd": 2}]
+[{"title": "Abstract", "pageStart": 1, "pageEnd": 1}, {"title": "Introduction", "pageStart": 1, "pageEnd": 3}]
 
-RULES:
-1. Use clean section names without numbering
-2. Page numbers are 1-indexed
-3. Cover ALL ${allPagesText.length} pages - don't leave gaps
-4. Skip References section
+CRITICAL RULES:
+1. Find EVERY section - don't skip any
+2. Use clean section names without numbering (e.g., "Methods" not "3. Methods")
+3. Page numbers are 1-indexed
+4. Sections must cover pages 1 through ${allPagesText.length} without gaps
+5. Skip References/Bibliography section only
 
 PAPER SAMPLES:
 ${sampleText}`;
