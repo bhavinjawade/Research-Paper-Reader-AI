@@ -362,6 +362,20 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, selectedVoice: voice }));
   };
 
+  // Scroll to a section when clicking on section tab
+  const scrollToSection = (sectionId: string, sectionIndex: number) => {
+    // Find the first block of this section
+    const section = state.sections.find(s => s.id === sectionId);
+    if (section && section.blocks.length > 0) {
+      const firstBlockId = section.blocks[0].id;
+      const element = document.getElementById(firstBlockId);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setState(prev => ({ ...prev, currentSectionIndex: sectionIndex }));
+      }
+    }
+  };
+
   if (showKeyInput) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-slate-900">
@@ -471,7 +485,7 @@ const App: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center justify-center gap-3 mb-4">
-            <img src="/images/logo.png" alt="Paper Reader AI" className="w-14 h-14 md:w-16 md:h-16 rounded-2xl" />
+            <img src="./images/logo.png" alt="Paper Reader AI" className="w-14 h-14 md:w-16 md:h-16 rounded-2xl" />
             <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-slate-900 font-['Inter']">
               Paper Reader <span className="text-indigo-600">AI</span>
             </h1>
@@ -574,18 +588,22 @@ const App: React.FC = () => {
             {state.sections.length > 0 && (
               <div className="px-6 md:px-10 py-3 bg-slate-50/80 border-b border-slate-100 flex gap-2 overflow-x-auto custom-scrollbar">
                 {state.sections.map((section, idx) => (
-                  <div
+                  <button
                     key={section.id}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${section.status === 'ready' || section.status === 'completed'
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : section.status === 'processing'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-slate-100 text-slate-500'
+                    onClick={() => scrollToSection(section.id, idx)}
+                    disabled={section.blocks.length === 0}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 ${state.currentSectionIndex === idx
+                      ? 'bg-indigo-600 text-white ring-2 ring-indigo-300'
+                      : section.status === 'ready' || section.status === 'completed'
+                        ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                        : section.status === 'processing'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-slate-100 text-slate-500'
                       }`}
                   >
                     {section.status === 'processing' && <Loader2 size={10} className="inline mr-1 animate-spin" />}
                     {section.title}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
